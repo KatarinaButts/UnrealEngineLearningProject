@@ -9,12 +9,14 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundCue.h"
 #include "Weapon.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
-
+#include "Enemy.h"
+#include "MainPlayerController.h"
 
 // Sets default values
 AMainCharacter::AMainCharacter()
@@ -72,18 +74,31 @@ AMainCharacter::AMainCharacter()
 	StaminaDrainRate = 25.f;
 	MinSprintStamina = 50.f;
 
+	InterpSpeed = 15.f;
+	bInterpToEnemy = false;
+
+	bHasCombatTarget = false;
+
+	bMovingForward = false;
+
+	bMovingRight = false;
+
 }
 
 // Called when the game starts or when spawned
 void AMainCharacter::BeginPlay()
 {
-	Super::BeginPlay();	
+	Super::BeginPlay();
+
+	MainPlayerController = Cast<AMainPlayerController>(GetController());
 }
 
 // Called every frame
 void AMainCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (MovementStatus == EMovementStatus::EMS_Dead) return;
 
 	float DeltaStamina = StaminaDrainRate * DeltaTime;
 	switch (StaminaStatus) {
@@ -96,7 +111,12 @@ void AMainCharacter::Tick(float DeltaTime)
 			else {
 				Stamina -= DeltaStamina;
 			}
-			SetMovementStatus(EMovementStatus::EMS_Sprinting);
+			if (bMovingForward || bMovingRight) {
+				SetMovementStatus(EMovementStatus::EMS_Sprinting);
+			}
+			else {
+				SetMovementStatus(EMovementStatus::EMS_Normal);
+			}
 		}
 		else {	//shift key up
 			if (Stamina + DeltaStamina >= MaxStamina) {
@@ -117,7 +137,12 @@ void AMainCharacter::Tick(float DeltaTime)
 			}
 			else {
 				Stamina -= DeltaStamina;
-				SetMovementStatus(EMovementStatus::EMS_Sprinting);
+				if (bMovingForward || bMovingRight) {
+					SetMovementStatus(EMovementStatus::EMS_Sprinting);
+				}
+				else {
+					SetMovementStatus(EMovementStatus::EMS_Normal);
+				}
 			}
 		}
 		else {	//shift key up
@@ -155,6 +180,26 @@ void AMainCharacter::Tick(float DeltaTime)
 		;
 	}
 
+	if (bInterpToEnemy && CombatTarget) {
+		FRotator LookAtYaw = GetLookAtRotationYaw(CombatTarget->GetActorLocation());
+		FRotator InterRotation = FMath::RInterpTo(GetActorRotation(), LookAtYaw, DeltaTime, InterpSpeed);
+
+		SetActorRotation(InterRotation);
+	}
+
+	if (CombatTarget) {
+		CombatTargetLocation = CombatTarget->GetActorLocation();
+		if (MainPlayerController) {
+			MainPlayerController->EnemyLocation = CombatTargetLocation;
+		}
+	}
+
+}
+
+FRotator AMainCharacter::GetLookAtRotationYaw(FVector Target) {
+	FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(GetActorLocation(), Target);
+	FRotator LookAtRotationYaw(0.f, LookAtRotation.Yaw, 0.f);
+	return LookAtRotationYaw;
 }
 
 // Called to bind functionality to input
@@ -163,8 +208,8 @@ void AMainCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	check(PlayerInputComponent);
 
-	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
-	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
+	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &AMainCharacter::Jump);
+	PlayerInputComponent->BindAction("Jump", IE_Released, this, &AMainCharacter::StopJumping);
 
 	PlayerInputComponent->BindAction("Sprint", IE_Pressed, this, &AMainCharacter::ShiftKeyDown);
 	PlayerInputComponent->BindAction("Sprint", IE_Released, this, &AMainCharacter::ShiftKeyUp);
@@ -184,24 +229,30 @@ void AMainCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 }
 
 void AMainCharacter::MoveForward(float Value) {
-	if (Controller != nullptr && Value != 0.0f && (!bAttacking)) {
+	bMovingForward = false;
+	if (Controller != nullptr && Value != 0.0f && (!bAttacking) && (MovementStatus != EMovementStatus::EMS_Dead)) {
 		//find out which way is forward
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
 	
 		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		AddMovementInput(Direction, Value);
+
+		bMovingForward = true;
 	}
 }
 
 void AMainCharacter::MoveRight(float Value) {
-	if (Controller != nullptr && Value != 0.0f && (!bAttacking)) {
+	bMovingRight = false;
+	if (Controller != nullptr && Value != 0.0f && (!bAttacking) && (MovementStatus != EMovementStatus::EMS_Dead)) {
 		//find out which way is forward
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
 
 		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 		AddMovementInput(Direction, Value);
+
+		bMovingRight = true;
 	}
 }
 
@@ -216,17 +267,30 @@ void AMainCharacter::LookUpAtRate(float Rate) {
 }
 
 void AMainCharacter::DecrementHealth(float Amount) {
-	if (Health - Amount <= 0.f) {
-		Health = 0.f;
-		Die();
-	}
-	else {
-		Health -= Amount;
-	}
+	
 }
 
 void AMainCharacter::Die() {
+	if (MovementStatus == EMovementStatus::EMS_Dead) return;
 
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (AnimInstance && CombatMontage) {
+		AnimInstance->Montage_Play(CombatMontage, 1.0f);
+		AnimInstance->Montage_JumpToSection(FName("Death"));
+	}
+	SetMovementStatus(EMovementStatus::EMS_Dead);
+}
+
+void AMainCharacter::Jump() {
+	if (MovementStatus != EMovementStatus::EMS_Dead) {
+		ACharacter::Jump();
+	}
+}
+
+
+void AMainCharacter::DeathEnd() {
+	GetMesh()->bPauseAnims = true;
+	GetMesh()->bNoSkeletonUpdate = true;
 }
 
 void AMainCharacter::IncrementCoins(int32 Amount) {
@@ -258,6 +322,11 @@ void AMainCharacter::ShiftKeyUp() {
 
 void AMainCharacter::LMBDown() {
 	bLMBDown = true;
+
+	if (MovementStatus == EMovementStatus::EMS_Dead) {
+		return;
+	}
+
 	if (ActiveOverlappingItem) {
 		AWeapon* Weapon = Cast<AWeapon>(ActiveOverlappingItem);
 		if (Weapon) {
@@ -281,8 +350,10 @@ void AMainCharacter::SetEquippedWeapon(AWeapon* WeaponToSet) {
 }
 
 void AMainCharacter::Attack() {
-	if (!bAttacking) {
+	if (!bAttacking && (MovementStatus != EMovementStatus::EMS_Dead)) {
 		bAttacking = true;
+		SetInterpToEnemy(true);
+
 		UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 		if (AnimInstance && CombatMontage) {
 			int Section = FMath::RandRange(0, 1);
@@ -304,6 +375,7 @@ void AMainCharacter::Attack() {
 
 void AMainCharacter::AttackEnd() {
 	bAttacking = false;
+	SetInterpToEnemy(false);
 	if (bLMBDown) {
 		Attack();
 	}
@@ -316,6 +388,28 @@ void AMainCharacter::PlaySwingSound() {
 	}
 }
 
+void AMainCharacter::SetInterpToEnemy(bool Interp) {
+	bInterpToEnemy = Interp;
+}
+
+float AMainCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) {
+	if (Health - DamageAmount <= 0.f) {
+		Health = 0.f;
+		Die();
+		if (DamageCauser) {
+			AEnemy* Enemy = Cast<AEnemy>(DamageCauser);
+			if (Enemy) {
+				Enemy->bHasValidTarget = false;
+			}
+		}
+	}
+	else {
+		Health -= DamageAmount;
+	}
+	return DamageAmount;
+}
+
+
 /*
 void AMainCharacter::ShowPickupLocations() {
 	for (FVector Location : PickupLocations) {
@@ -323,3 +417,4 @@ void AMainCharacter::ShowPickupLocations() {
 	}
 }
 */
+
