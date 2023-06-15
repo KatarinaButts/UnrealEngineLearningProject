@@ -26,6 +26,7 @@ AEnemy::AEnemy()
 	AgroSphere = CreateDefaultSubobject<USphereComponent>(TEXT("AgroSphere"));
 	AgroSphere->SetupAttachment(GetRootComponent());
 	AgroSphere->InitSphereRadius(600.f);
+	AgroSphere->SetCollisionResponseToChannel(ECollisionChannel::ECC_WorldDynamic, ECollisionResponse::ECR_Ignore);
 
 	CombatSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CombatSphere"));
 	CombatSphere->SetupAttachment(GetRootComponent());
@@ -255,6 +256,10 @@ void AEnemy::AttackEnd() {
 		float AttackTime = FMath::FRandRange(AttackMinTime, AttackMaxTime);
 		GetWorldTimerManager().SetTimer(AttackTimer, this, &AEnemy::Attack, AttackTime);
 		UE_LOG(LogTemp, Warning, TEXT("AttackTime: %f"), AttackTime);
+	}
+	else if (!bOverlappingCombatSphere&&CombatTarget) {
+		UE_LOG(LogTemp, Warning, TEXT("!bOverlappingCombatSphere && CombatTarget"));
+		MoveToTarget(CombatTarget);
 	}
 }
 
