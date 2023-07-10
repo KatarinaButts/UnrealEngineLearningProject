@@ -17,6 +17,7 @@
 #include "Animation/AnimInstance.h"
 #include "Enemy.h"
 #include "MainPlayerController.h"
+#include "FirstSaveGame.h"
 
 // Sets default values
 AMainCharacter::AMainCharacter()
@@ -302,6 +303,16 @@ void AMainCharacter::IncrementCoins(int32 Amount) {
 	}
 }
 
+void AMainCharacter::IncrementHealth(float Amount) {
+	if (Health + Amount >= MaxHealth) {
+		Health = MaxHealth;
+	}
+	else {
+		Health += Amount;
+	}
+}
+
+
 void AMainCharacter::SetMovementStatus(EMovementStatus Status) {
 	MovementStatus = Status;
 	if (MovementStatus == EMovementStatus::EMS_Sprinting) {
@@ -407,6 +418,90 @@ float AMainCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& 
 		Health -= DamageAmount;
 	}
 	return DamageAmount;
+}
+
+void AMainCharacter::UpdateCombatTarget() {
+	TArray<AActor*> OverlappingActors;
+
+	GetOverlappingActors(OverlappingActors, EnemyFilter);
+
+	if (OverlappingActors.Num() == 0) {
+		if (MainPlayerController) {
+			MainPlayerController->RemoveEnemyHealthBar();
+		}
+		return;
+	}
+
+	AEnemy* ClosestEnemy = Cast<AEnemy>(OverlappingActors[0]);
+
+	if (ClosestEnemy) {
+		FVector Location = GetActorLocation();
+		float MinDistance = (ClosestEnemy->GetActorLocation() - Location).Size();
+
+		for (auto Actor : OverlappingActors) {
+			AEnemy* Enemy = Cast<AEnemy>(Actor);
+			if (Enemy) {
+				float DistanceToActor = (Enemy->GetActorLocation() - Location).Size();
+				if (DistanceToActor < MinDistance) {
+					MinDistance = DistanceToActor;
+					ClosestEnemy = Enemy;
+				}
+
+			}
+		}
+
+		if (MainPlayerController) {
+			MainPlayerController->DisplayEnemyHealthBar();
+		}
+		SetCombatTarget(ClosestEnemy);
+		bHasCombatTarget = true;
+	}
+}
+
+void AMainCharacter::SwitchLevel(FName LevelName) {
+	UWorld* World = GetWorld();
+	if (World) {
+		FString CurrentLevel = World->GetMapName();
+
+		FName CurrentLevelName(*CurrentLevel);
+		if (CurrentLevelName != LevelName) {
+			UGameplayStatics::OpenLevel(World, LevelName);
+		}
+	}
+}
+
+
+void AMainCharacter::SaveGame() {
+	UFirstSaveGame* SaveGameInstance = Cast<UFirstSaveGame>(UGameplayStatics::CreateSaveGameObject(UFirstSaveGame::StaticClass()));
+
+	SaveGameInstance->CharacterStats.Health = Health;
+	SaveGameInstance->CharacterStats.MaxHealth = MaxHealth;
+	SaveGameInstance->CharacterStats.Stamina = Stamina;
+	SaveGameInstance->CharacterStats.MaxStamina = MaxStamina;
+	SaveGameInstance->CharacterStats.Coins = Coins;
+
+	SaveGameInstance->CharacterStats.Location = GetActorLocation();
+	SaveGameInstance->CharacterStats.Rotation = GetActorRotation();
+
+	UGameplayStatics::SaveGameToSlot(SaveGameInstance, SaveGameInstance->PlayerName, SaveGameInstance->UserIndex);
+
+}
+
+void AMainCharacter::LoadGame(bool SetPosition) {
+	UFirstSaveGame* LoadGameInstance = Cast<UFirstSaveGame>(UGameplayStatics::CreateSaveGameObject(UFirstSaveGame::StaticClass()));
+
+	LoadGameInstance = Cast<UFirstSaveGame>(UGameplayStatics::LoadGameFromSlot(LoadGameInstance->PlayerName, LoadGameInstance->UserIndex));
+	Health = LoadGameInstance->CharacterStats.Health;
+	MaxHealth = LoadGameInstance->CharacterStats.MaxHealth;
+	Stamina = LoadGameInstance->CharacterStats.Stamina;
+	MaxStamina = LoadGameInstance->CharacterStats.MaxStamina;
+	Coins = LoadGameInstance->CharacterStats.Coins;
+
+
+	if (SetPosition) {
+		SetActorLocation(LoadGameInstance->CharacterStats.Location);
+		SetActorRotation(LoadGameInstance->CharacterStats.Rotation);
+	}
 }
 
 
