@@ -32,6 +32,12 @@ struct FCharacterStats {
 	UPROPERTY(VisibleAnywhere, Category = "SaveGameData")
 	FRotator Rotation;
 
+	UPROPERTY(VisibleAnywhere, Category = "SaveGameData")
+	FString WeaponName;
+
+	UPROPERTY(VisibleAnywhere, Category = "SaveGameData")
+	bool bHasWeaponEquipped;
+
 	//UPROPERTY(VisibleAnywhere, Category = "SaveGameData")
 	//int32 PlayerLevel;
 

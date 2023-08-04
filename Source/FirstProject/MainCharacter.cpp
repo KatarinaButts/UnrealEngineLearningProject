@@ -18,6 +18,7 @@
 #include "Enemy.h"
 #include "MainPlayerController.h"
 #include "FirstSaveGame.h"
+#include "ItemStorage.h"
 
 // Sets default values
 AMainCharacter::AMainCharacter()
@@ -480,6 +481,11 @@ void AMainCharacter::SaveGame() {
 	SaveGameInstance->CharacterStats.MaxStamina = MaxStamina;
 	SaveGameInstance->CharacterStats.Coins = Coins;
 
+	if (EquippedWeapon) {
+		SaveGameInstance->CharacterStats.WeaponName = EquippedWeapon->Name;
+		SaveGameInstance->CharacterStats.bHasWeaponEquipped = true;
+	}
+
 	SaveGameInstance->CharacterStats.Location = GetActorLocation();
 	SaveGameInstance->CharacterStats.Rotation = GetActorRotation();
 
@@ -491,6 +497,14 @@ void AMainCharacter::LoadGame(bool SetPosition) {
 	UFirstSaveGame* LoadGameInstance = Cast<UFirstSaveGame>(UGameplayStatics::CreateSaveGameObject(UFirstSaveGame::StaticClass()));
 
 	LoadGameInstance = Cast<UFirstSaveGame>(UGameplayStatics::LoadGameFromSlot(LoadGameInstance->PlayerName, LoadGameInstance->UserIndex));
+
+
+	if (!LoadGameInstance->CharacterStats.bHasWeaponEquipped && EquippedWeapon) {
+		UE_LOG(LogTemp, Warning, TEXT("We did not have an equipped weapon, but EquippedWeapon was true"))
+		EquippedWeapon->Destroy();
+		SetEquippedWeapon(NULL);
+	}
+
 	Health = LoadGameInstance->CharacterStats.Health;
 	MaxHealth = LoadGameInstance->CharacterStats.MaxHealth;
 	Stamina = LoadGameInstance->CharacterStats.Stamina;
@@ -501,6 +515,17 @@ void AMainCharacter::LoadGame(bool SetPosition) {
 	if (SetPosition) {
 		SetActorLocation(LoadGameInstance->CharacterStats.Location);
 		SetActorRotation(LoadGameInstance->CharacterStats.Rotation);
+	}
+
+	if (WeaponStorage && LoadGameInstance->CharacterStats.bHasWeaponEquipped) {
+		AItemStorage* Weapons = GetWorld()->SpawnActor<AItemStorage>(WeaponStorage);
+		if (Weapons) {
+			FString WeaponName = LoadGameInstance->CharacterStats.WeaponName;
+			if (Weapons->WeaponMap.Contains(WeaponName)) {
+				AWeapon* WeaponToEquip = GetWorld()->SpawnActor<AWeapon>(Weapons->WeaponMap[WeaponName]);
+					WeaponToEquip->Equip(this);
+			}
+		}
 	}
 }
 
