@@ -132,6 +132,9 @@ public:
 	float Stamina;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Stats")
+	float StaminaForBasicAttack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Stats")
 	int32 MaxCoins;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Stats")
@@ -234,6 +237,12 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void PlaySwingSound();
+
+	void CalculateSprintStamina(float StaminaUsed);
+
+	void CalculateAttackStamina(float StaminaUsed);
+	 
+	bool CheckValidStaminaStatus();
 
 	void UpdateCombatTarget();
 
