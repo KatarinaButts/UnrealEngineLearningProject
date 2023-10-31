@@ -86,6 +86,7 @@ AMainCharacter::AMainCharacter()
 	bMovingForward = false;
 
 	bMovingRight = false;
+	bJumping = false;
 
 }
 
@@ -137,7 +138,11 @@ void AMainCharacter::Tick(float DeltaTime)
 
 	float DeltaStamina = StaminaDrainRate * DeltaTime;
 
-	CalculateSprintStamina(DeltaStamina);
+	if (bJumping)
+		CheckFallingStatus();
+
+	if(!bAttacking && !bJumping)
+		CalculateSprintStamina(DeltaStamina);
 
 	if (bInterpToEnemy && CombatTarget) {
 		FRotator LookAtYaw = GetLookAtRotationYaw(CombatTarget->GetActorLocation());
@@ -271,6 +276,13 @@ void AMainCharacter::Jump() {
 
 	if (MovementStatus != EMovementStatus::EMS_Dead) {
 		ACharacter::Jump();
+		bJumping = true;
+	}
+}
+
+void AMainCharacter::CheckFallingStatus() {
+	if (AMainCharacter::CanJump()) {
+		bJumping = false;
 	}
 }
 
@@ -495,6 +507,7 @@ void AMainCharacter::CalculateAttackStamina(float StaminaUsed)
 		else {
 			Stamina -= StaminaUsed;
 		}
+		break;
 	case EStaminaStatus::ESS_BelowMinimum:
 		if (Stamina - StaminaUsed <= 0.f) {
 			SetStaminaStatus(EStaminaStatus::ESS_Exhausted);
@@ -503,8 +516,10 @@ void AMainCharacter::CalculateAttackStamina(float StaminaUsed)
 		else {
 			Stamina -= StaminaUsed;
 		}
+		break;
 	case EStaminaStatus::ESS_Exhausted:
 			Stamina = 0.f;
+			break;
 	case EStaminaStatus::ESS_ExhaustedRecovering:
 		break;
 	default:

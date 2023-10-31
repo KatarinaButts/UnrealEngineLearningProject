@@ -148,6 +148,8 @@ public:
 
 	virtual void Jump() override;
 
+	void CheckFallingStatus();
+
 	UFUNCTION(BlueprintCallable)
 	void DeathEnd();
 
@@ -226,6 +228,8 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Anims")
 	bool bAttacking;
+
+	bool bJumping;
 
 	void Attack();
 
